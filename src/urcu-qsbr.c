@@ -132,6 +132,7 @@ static void wait_gp(void)
 	cmm_smp_rmb();
 	if (uatomic_read(&urcu_qsbr_gp.futex) != -1)
 		return;
+    //等待futex不为-1，这是调用linux底层futex快速用户空间互斥锁
 	while (futex_noasync(&urcu_qsbr_gp.futex, FUTEX_WAIT, -1,
 			NULL, NULL, 0)) {
 		switch (errno) {
@@ -170,6 +171,7 @@ static void wait_for_readers(struct cds_list_head *input_readers,
 			wait_loops++;
         //超过阀值，
 		if (wait_loops >= RCU_QS_ACTIVE_ATTEMPTS) {
+            //设置futex，通知读者需要调用futex唤醒写者
 			uatomic_set(&urcu_qsbr_gp.futex, -1);
 			/*
 			 * Write futex before write waiting (the other side
@@ -197,7 +199,7 @@ static void wait_for_readers(struct cds_list_head *input_readers,
 				cds_list_move(&index->node, qsreaders);
 				break;
 			case URCU_READER_ACTIVE_OLD:
-                //读者还没退出临界区，还在引用旧值
+                //读者还没退出临界区，还在引用旧值，需要再次循环检查
 				/*
 				 * Old snapshot. Leaving node in
 				 * input_readers will make us busy-loop
@@ -207,7 +209,7 @@ static void wait_for_readers(struct cds_list_head *input_readers,
 				break;
 			}
 		}
-
+        //链表为空，表明当前读者都已经度过静止期
 		if (cds_list_empty(input_readers)) {
             //本次的宽限期已经没有读者了，所有读者都看到的是最新值，本次宽限期结束
 			if (wait_loops >= RCU_QS_ACTIVE_ATTEMPTS) {
