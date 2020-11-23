@@ -543,8 +543,11 @@ int rcu_read_ongoing(void)
 URCU_ATTR_ALIAS(urcu_stringify(rcu_read_ongoing))
 void alias_rcu_read_ongoing();
 
+//注册线程，加入到registry全局链表
+//每个读者线程都需要注册
 void rcu_register_thread(void)
 {
+    //urcu_qsbr_reader
 	URCU_TLS(rcu_reader).tid = pthread_self();
 	assert(URCU_TLS(rcu_reader).need_mb == 0);
 	assert(!(URCU_TLS(rcu_reader).ctr & URCU_GP_CTR_NEST_MASK));
@@ -559,6 +562,7 @@ void rcu_register_thread(void)
 URCU_ATTR_ALIAS(urcu_stringify(rcu_register_thread))
 void alias_rcu_register_thread();
 
+//注销读者线程
 void rcu_unregister_thread(void)
 {
 	mutex_lock(&rcu_registry_lock);
@@ -572,6 +576,7 @@ void alias_rcu_unregister_thread();
 
 #ifdef RCU_MEMBARRIER
 
+//使用SYS_MEMBARRIER，这里只分析qsbr(基于静止状态检查)的情况
 #ifdef CONFIG_RCU_FORCE_SYS_MEMBARRIER
 static
 void rcu_sys_membarrier_status(bool available)

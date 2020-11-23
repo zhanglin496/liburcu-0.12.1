@@ -64,6 +64,7 @@ enum urcu_state {
 #define URCU_GP_CTR_PHASE	(1UL << (sizeof(unsigned long) << 2))
 #define URCU_GP_CTR_NEST_MASK	(URCU_GP_CTR_PHASE - 1)
 
+//记录rcu的宽限期
 struct urcu_gp {
 	/*
 	 * Global grace period counter.
@@ -72,6 +73,7 @@ struct urcu_gp {
 	 * Written to only by writer with mutex taken.
 	 * Read by both writer and readers.
 	 */
+	 //实现基本的原理很简单，就是一个全局long计数器
 	unsigned long ctr;
 
 	int32_t futex;

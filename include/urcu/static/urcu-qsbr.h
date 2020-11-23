@@ -67,6 +67,7 @@ struct urcu_qsbr_reader {
 	unsigned long ctr;
 	/* Data used for registry */
 	struct cds_list_head node __attribute__((aligned(CAA_CACHE_LINE_SIZE)));
+	// tag have waite for gp
 	int waiting;
 	pthread_t tid;
 	/* Reader registered flag, for internal checks. */
@@ -80,9 +81,12 @@ extern DECLARE_URCU_TLS(struct urcu_qsbr_reader, urcu_qsbr_reader);
  */
 static inline void urcu_qsbr_wake_up_gp(void)
 {
+    //waiting非0，表示有线程调用了synchronize_rcu在等待本线程退出静止状态
 	if (caa_unlikely(_CMM_LOAD_SHARED(URCU_TLS(urcu_qsbr_reader).waiting))) {
 		_CMM_STORE_SHARED(URCU_TLS(urcu_qsbr_reader).waiting, 0);
 		cmm_smp_mb();
+		//check have waiter
+		//检查是否有写者在等待
 		if (uatomic_read(&urcu_qsbr_gp.futex) != -1)
 			return;
 		uatomic_set(&urcu_qsbr_gp.futex, 0);
@@ -91,6 +95,7 @@ static inline void urcu_qsbr_wake_up_gp(void)
 		 * return something (because urcu_die() is not publicly
 		 * exposed).
 		 */
+		 //唤醒写者线程
 		(void) futex_noasync(&urcu_qsbr_gp.futex, FUTEX_WAKE, 1,
 				NULL, NULL, 0);
 	}
@@ -100,14 +105,17 @@ static inline enum urcu_state urcu_qsbr_reader_state(unsigned long *ctr)
 {
 	unsigned long v;
 
-//v==0, thread offline, reader already exit rcu_read_lock critical 
+    //v==0, thread offline, reader already exit rcu_read_lock critical 
+    //等于0，表示线程处于离线状态
 	v = CMM_LOAD_SHARED(*ctr);
 	if (!v)
 		return URCU_READER_INACTIVE;
-	//v == global ctl, reader already see the new value
+	//v == global ctr, reader already see the new value
+	//线程已经看到全局最新值
 	if (v == urcu_qsbr_gp.ctr)
 		return URCU_READER_ACTIVE_CURRENT;
 	//others, reader see the old value, so must be wait reader
+	//线程看到的还是旧值
 	return URCU_READER_ACTIVE_OLD;
 }
 
@@ -159,6 +167,8 @@ static inline int _urcu_qsbr_read_ongoing(void)
 static inline void _urcu_qsbr_quiescent_state_update_and_wakeup(unsigned long gp_ctr)
 {
 	cmm_smp_mb();
+	//cache new global ctr to local
+	//拷贝全局计数值到到调用线程的局部ctl中
 	_CMM_STORE_SHARED(URCU_TLS(urcu_qsbr_reader).ctr, gp_ctr);
 	cmm_smp_mb();	/* write URCU_TLS(urcu_qsbr_reader).ctr before read futex */
 	urcu_qsbr_wake_up_gp();
@@ -182,7 +192,9 @@ static inline void _urcu_qsbr_quiescent_state(void)
 	unsigned long gp_ctr;
 
 	urcu_assert(URCU_TLS(urcu_qsbr_reader).registered);
-	if ((gp_ctr = CMM_LOAD_SHARED(urcu_qsbr_gp.ctr)) == URCU_TLS(urcu_qsbr_reader).ctr)
+	//local ctr == global ctr, newest value, no need wake writer
+	//如果ctl全局计数值等于调用线程的本地ctl计数值，表示没有写者在等待，不需要唤醒写者
+ 	if ((gp_ctr = CMM_LOAD_SHARED(urcu_qsbr_gp.ctr)) == URCU_TLS(urcu_qsbr_reader).ctr)
 		return;
 	_urcu_qsbr_quiescent_state_update_and_wakeup(gp_ctr);
 }
@@ -199,6 +211,7 @@ static inline void _urcu_qsbr_thread_offline(void)
 {
 	urcu_assert(URCU_TLS(urcu_qsbr_reader).registered);
 	cmm_smp_mb();
+    //设置本地ctl值为0
 	CMM_STORE_SHARED(URCU_TLS(urcu_qsbr_reader).ctr, 0);
 	cmm_smp_mb();	/* write URCU_TLS(urcu_qsbr_reader).ctr before read futex */
 	urcu_qsbr_wake_up_gp();
@@ -217,6 +230,7 @@ static inline void _urcu_qsbr_thread_online(void)
 {
 	urcu_assert(URCU_TLS(urcu_qsbr_reader).registered);
 	cmm_barrier();	/* Ensure the compiler does not reorder us with mutex */
+    //拷贝全局ctl值到本地线程中
 	_CMM_STORE_SHARED(URCU_TLS(urcu_qsbr_reader).ctr, CMM_LOAD_SHARED(urcu_qsbr_gp.ctr));
 	cmm_smp_mb();
 }
