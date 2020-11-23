@@ -82,7 +82,7 @@ URCU_ATTR_ALIAS("urcu_qsbr_gp") extern struct urcu_gp rcu_gp_qsbr;
  * Written to only by each individual reader. Read by both the reader and the
  * writers.
  */
- //声明per thread tls变量
+ //定义per thread tls变量
 DEFINE_URCU_TLS(struct urcu_qsbr_reader, urcu_qsbr_reader);
 DEFINE_URCU_TLS_ALIAS(struct urcu_qsbr_reader, urcu_qsbr_reader, rcu_reader_qsbr);
 //global record rcu reader
