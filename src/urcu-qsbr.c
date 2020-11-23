@@ -86,6 +86,7 @@ URCU_ATTR_ALIAS("urcu_qsbr_gp") extern struct urcu_gp rcu_gp_qsbr;
 DEFINE_URCU_TLS(struct urcu_qsbr_reader, urcu_qsbr_reader);
 DEFINE_URCU_TLS_ALIAS(struct urcu_qsbr_reader, urcu_qsbr_reader, rcu_reader_qsbr);
 //global record rcu reader
+//记录所有注册的rcu读者
 static CDS_LIST_HEAD(registry);
 
 /*
@@ -223,7 +224,9 @@ static void wait_for_readers(struct cds_list_head *input_readers,
 		    //还有读者没退出临界区
 			/* Temporarily unlock the registry lock. */
 			mutex_unlock(&rcu_registry_lock);
-            //这里分两中情况，如果忙循环次数大于阀值，调用wait_gp
+            //这里解锁rcu_registry_lock，如果有新线程注册，会观察到全局ctr的最新值
+            
+            //这里分两种情况，如果忙循环次数大于阀值，调用wait_gp陷入内核睡眠
 			if (wait_loops >= RCU_QS_ACTIVE_ATTEMPTS) {
 				wait_gp();
 			} else {
@@ -446,6 +449,7 @@ void urcu_qsbr_synchronize_rcu(void)
 	 * wait_for_readers() can release and grab again rcu_registry_lock
 	 * interally.
 	 */
+	//这里为什么直接操作registry，而不是做一份副本？
 	wait_for_readers(&registry, NULL, &qsreaders);
 
 	/*
